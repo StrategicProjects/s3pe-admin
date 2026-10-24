@@ -24,3 +24,7 @@ Build: OpenSSL vendored, so the Linux release binary is fully static.
   stores nothing, but an administrator can reveal a secret again.
 - Fonts cached by the browser; everything else stays `no-store`.
 - Icon buttons with app-styled tooltips in every table; styled selects; responsive form grids; counts and subtitles in page headers; name and id stacked in table cells.
+
+## 0.2.1 — 2026-10-24
+
+More breathing room between the navy bar and the page header.
