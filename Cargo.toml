@@ -1,6 +1,6 @@
 [package]
 name = "s3pe-admin"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["André Leite <leite@castlab.org>"]
 edition = "2021"
 rust-version = "1.85"
@@ -31,6 +31,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 anyhow = "1"
 thiserror = "2"
+# webauthn-rs needs OpenSSL; vendored so the musl release binary is static.
+openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 webauthn-authenticator-rs = { version = "0.5", features = ["softpasskey"] }
