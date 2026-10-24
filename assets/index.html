@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>s3pe admin</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%AA%A3%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="{{BASE}}/style.css" />
+</head>
+<body data-base="{{BASE}}">
+<header class="nav">
+  <div class="wrap nav-inner">
+    <div class="brand"><span class="logo">🪣</span> s3pe <span class="muted">· admin</span></div>
+    <nav class="nav-links" id="nav" hidden>
+      <a href="#buckets" data-view="buckets">Buckets</a>
+      <a href="#keys" data-view="keys">Keys</a>
+      <a href="#admins" data-view="admins">Administrators</a>
+      <a href="#audit" data-view="audit">Audit</a>
+      <a href="#profile" data-view="profile" id="who"></a>
+      <button class="btn small" id="logout">Sign out</button>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="main">
+  <section id="view" class="view"></section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<template id="t-login">
+  <div class="card narrow">
+    <h1>Sign in</h1>
+    <p class="muted">Your e-mail, then your passkey (Touch ID, Windows Hello or a security key).</p>
+    <form id="login-form">
+      <label>E-mail <input type="email" name="email" autocomplete="username webauthn" required autofocus /></label>
+      <button class="btn primary" type="submit">Continue with passkey</button>
+    </form>
+    <p class="error" id="login-error" hidden></p>
+    <p class="muted small">No passkey yet? Ask an administrator for an invitation link.</p>
+  </div>
+</template>
+<template id="t-invite">
+  <div class="card narrow">
+    <h1>Welcome</h1>
+    <p class="muted">This invitation registers your first passkey as <b id="invite-who"></b>. Give it a name you will recognise (the device you are on).</p>
+    <form id="invite-form">
+      <label>Passkey name <input name="passkey_name" placeholder="MacBook do Hugo" maxlength="60" /></label>
+      <button class="btn primary" type="submit">Create passkey and sign in</button>
+    </form>
+    <p class="error" id="invite-error" hidden></p>
+  </div>
+</template>
+<template id="t-buckets">
+  <div class="head"><h1>Buckets</h1><div id="health" class="pill"></div><button class="btn primary" id="new-bucket">New bucket</button></div>
+  <div class="card" id="bucket-form" hidden>
+    <h3>New bucket</h3>
+    <form id="create-bucket">
+      <label>Name <input name="name" pattern="[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]" required placeholder="projeto" /></label>
+      <label class="check"><input type="checkbox" name="with_keys" checked /> Also create two keys: <code>&lt;name&gt;</code> (read and write) and <code>&lt;name&gt;-leitura</code> (read only)</label>
+      <div class="row"><button class="btn primary" type="submit">Create</button><button class="btn" type="button" id="cancel-bucket">Cancel</button></div>
+    </form>
+  </div>
+  <div class="scroll"><table class="data"><thead><tr><th>Bucket</th><th class="num">Objects</th><th class="num">Size</th><th>Keys</th><th>Created</th></tr></thead><tbody id="bucket-rows"></tbody></table></div>
+</template>
+<template id="t-bucket">
+  <p><a href="#buckets">← Buckets</a></p>
+  <div class="head"><h1 id="b-name"></h1><span class="pill mono" id="b-id"></span></div>
+  <div class="grid f3">
+    <div class="card stat"><div class="label">Objects</div><div class="value" id="b-objects"></div></div>
+    <div class="card stat"><div class="label">Size</div><div class="value" id="b-size"></div></div>
+    <div class="card stat"><div class="label">Unfinished multipart uploads</div><div class="value" id="b-mpu"></div></div>
+  </div>
+  <div class="head"><h2>Keys with access</h2><button class="btn" id="b-add-key">Give access to a key</button></div>
+  <div class="card" id="b-key-form" hidden>
+    <form id="b-allow">
+      <label>Key <select name="key_id" id="b-key-select"></select></label>
+      <label>Profile <select name="profile"><option value="read">read only</option><option value="readwrite">read and write</option></select></label>
+      <div class="row"><button class="btn primary" type="submit">Allow</button><button class="btn" type="button" id="b-cancel-key">Cancel</button></div>
+    </form>
+  </div>
+  <div class="scroll"><table class="data"><thead><tr><th>Key</th><th>Access key id</th><th>Permissions</th><th></th></tr></thead><tbody id="b-keys"></tbody></table></div>
+  <div class="card danger">
+    <h3>Delete this bucket</h3>
+    <p class="muted">Only an empty bucket can be deleted. Every key loses access first. Type the bucket's name to confirm.</p>
+    <form id="b-delete"><label class="check"><input type="checkbox" name="delete_orphan_keys" checked /> Also delete the keys that had access only to this bucket</label><div class="row"><input name="name" placeholder="bucket name" /><button class="btn danger" type="submit">Delete bucket</button></div></form>
+  </div>
+</template>
+<template id="t-keys">
+  <div class="head"><h1>Keys</h1><button class="btn primary" id="new-key">New key</button></div>
+  <div class="card" id="key-form" hidden>
+    <h3>New key</h3>
+    <form id="create-key">
+      <label>Name <input name="name" pattern="[a-z0-9._-]{2,64}" required placeholder="projeto-leitura" /></label>
+      <label>Bucket <select name="bucket_id" id="key-bucket"><option value="">(none yet)</option></select></label>
+      <label>Profile <select name="profile"><option value="read">read only</option><option value="readwrite">read and write</option></select></label>
+      <div class="row"><button class="btn primary" type="submit">Create</button><button class="btn" type="button" id="cancel-key">Cancel</button></div>
+    </form>
+  </div>
+  <div class="scroll"><table class="data"><thead><tr><th>Key</th><th>Access key id</th><th>Buckets</th><th>Created</th><th></th></tr></thead><tbody id="key-rows"></tbody></table></div>
+</template>
+<template id="t-secret">
+  <div class="card secret">
+    <h3>Save this secret now</h3>
+    <p class="muted">It is shown once. The console does not store it and will not show it again; if it is lost, create a new key.</p>
+    <div class="kv"><span>Name</span><code class="sel" data-f="name"></code></div>
+    <div class="kv"><span>Bucket</span><code class="sel" data-f="bucket"></code></div>
+    <div class="kv"><span>Permissions</span><code class="sel" data-f="permissions"></code></div>
+    <div class="kv"><span>AWS_ACCESS_KEY_ID</span><code class="sel" data-f="accessKeyId"></code></div>
+    <div class="kv"><span>AWS_SECRET_ACCESS_KEY</span><code class="sel" data-f="secretAccessKey"></code></div>
+    <div class="row"><button class="btn primary" data-copy>Copy as .Renviron / .env lines</button><button class="btn" data-done>Done, I saved it</button></div>
+  </div>
+</template>
+<template id="t-admins">
+  <div class="head"><h1>Administrators</h1><button class="btn primary" id="new-invite">Invite</button></div>
+  <div class="card" id="invite-form-card" hidden>
+    <h3>Invitation</h3>
+    <p class="muted">A one-time link, valid for 24 hours. Send it through a secure channel; whoever opens it registers a passkey and becomes an administrator.</p>
+    <form id="create-invite" class="row"><input name="name" placeholder="Name" required maxlength="80" /><input name="email" type="email" placeholder="e-mail" required /><button class="btn primary" type="submit">Create link</button></form>
+    <div id="invite-result" hidden><code class="sel block" id="invite-url"></code><button class="btn" id="copy-invite">Copy link</button></div>
+  </div>
+  <div class="scroll"><table class="data"><thead><tr><th>Name</th><th>E-mail</th><th>Since</th><th>Status</th><th></th></tr></thead><tbody id="admin-rows"></tbody></table></div>
+  <h2>Pending invitations</h2>
+  <div class="scroll"><table class="data"><thead><tr><th>Name</th><th>E-mail</th><th>By</th><th>Expires</th></tr></thead><tbody id="invite-rows"></tbody></table></div>
+</template>
+<template id="t-audit">
+  <div class="head"><h1>Audit</h1><a class="btn" id="audit-export" download="s3pe-admin-audit.json">Export JSON</a></div>
+  <div class="scroll"><table class="data"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr></thead><tbody id="audit-rows"></tbody></table></div>
+</template>
+<template id="t-profile">
+  <div class="head"><h1 id="p-name"></h1><button class="btn primary" id="add-passkey">Add a passkey</button></div>
+  <p class="muted" id="p-email"></p>
+  <div class="card" id="passkey-form" hidden>
+    <form id="create-passkey" class="row"><input name="passkey_name" placeholder="Name for this device" maxlength="60" required /><button class="btn primary" type="submit">Register</button></form>
+  </div>
+  <div class="scroll"><table class="data"><thead><tr><th>Passkey</th><th>Created</th><th>Last used</th><th></th></tr></thead><tbody id="passkey-rows"></tbody></table></div>
+</template>
+<script src="{{BASE}}/app.js"></script>
+</body>
+</html>
