@@ -42,3 +42,7 @@ More breathing room between the navy bar and the page header.
   and refreshes in the background; mutations clear the cache.
 - Audit table: details rendered as key: value chips that wrap, dates and
   IPs kept on one line; no more overflow.
+
+## 0.3.1 — 2026-10-24
+
+Fix: the space below the navy bar was overridden by the `.wrap` rule (the page header touched the bar).

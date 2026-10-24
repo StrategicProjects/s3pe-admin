@@ -42,7 +42,7 @@ header.nav { position: sticky; top: 0; z-index: 10; background: var(--navy); col
 .nav-links .btn.small { background: transparent; color: #E7ECF4; border-color: rgba(255,255,255,.35); margin-left: 8px; }
 .nav-links .btn.small:hover { background: rgba(255,255,255,.1); box-shadow: none; }
 .muted { color: var(--ink-muted); } .small { font-size: .875rem; }
-main { padding: 48px 0 72px; }
+main.wrap { padding: 48px 24px 72px; }
 
 h1 { font-family: var(--display); font-weight: 700; font-size: clamp(1.75rem, 3vw, 2.25rem); letter-spacing: -.01em; color: var(--ink-strong); margin: 0 0 6px; line-height: 1.15; }
 h2 { font-family: var(--display); font-weight: 700; font-size: 1.35rem; color: var(--ink-strong); margin: 32px 0 10px; }
@@ -77,7 +77,7 @@ option { font: inherit; }
 .date { white-space: nowrap; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .section { margin-top: 28px; }
 @media (max-width: 760px) {
-  .wrap { padding: 0 16px; } main { padding: 28px 0 56px; }
+  .wrap { padding: 0 16px; } main.wrap { padding: 28px 16px 56px; }
   .card { padding: 16px; border-radius: var(--radius-md); }
   .head { gap: 10px; } .head h1 { flex-basis: 100%; }
   table.data th, table.data td { padding: 9px 12px; }
