@@ -407,7 +407,7 @@ async fn invite_login_and_manage() {
     assert_eq!(s, 200, "{rot}");
     assert_ne!(rot["accessKeyId"], key_id, "a new key replaces the old one");
     assert!(
-        fg.lock().unwrap().keys.get(&key_id).is_none(),
+        !fg.lock().unwrap().keys.contains_key(&key_id),
         "old key deleted"
     );
     let key_id = rot["accessKeyId"].as_str().unwrap().to_string();
