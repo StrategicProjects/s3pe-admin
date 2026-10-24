@@ -230,6 +230,21 @@ async fn invite_login_and_manage() {
         .unwrap()
         .contains("script-src 'self'"));
     assert_eq!(page.headers().get("x-frame-options").unwrap(), "DENY");
+    let font = c
+        .http
+        .get(format!("{}/admin/fonts/saira.woff2", c.url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(font.status(), 200);
+    assert_eq!(font.headers().get("content-type").unwrap(), "font/woff2");
+    assert!(font
+        .headers()
+        .get("cache-control")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("max-age"));
 
     // not signed in
     let (s, v) = call(&mut c, "GET", "/me", None, false).await;
@@ -371,6 +386,31 @@ async fn invite_login_and_manage() {
         .iter()
         .any(|k| k["accessKeyId"] == key_id));
 
+    let (s, sec) = call(
+        &mut c,
+        "GET",
+        &format!("/keys/{key_id}/secret"),
+        None,
+        false,
+    )
+    .await;
+    assert_eq!(s, 200, "{sec}");
+    assert_eq!(sec["secretAccessKey"], "secret-of-the-fake");
+    let (s, rot) = call(
+        &mut c,
+        "POST",
+        &format!("/keys/{key_id}/rotate"),
+        Some(json!({"name": "externo"})),
+        true,
+    )
+    .await;
+    assert_eq!(s, 200, "{rot}");
+    assert_ne!(rot["accessKeyId"], key_id, "a new key replaces the old one");
+    assert!(
+        fg.lock().unwrap().keys.get(&key_id).is_none(),
+        "old key deleted"
+    );
+    let key_id = rot["accessKeyId"].as_str().unwrap().to_string();
     let (s, _) = call(
         &mut c,
         "POST",
@@ -421,6 +461,8 @@ async fn invite_login_and_manage() {
         "bucket.key.allowed",
         "bucket.key.denied",
         "key.deleted",
+        "key.secret_revealed",
+        "key.rotated",
         "bucket.deleted",
         "login",
         "admin.joined",

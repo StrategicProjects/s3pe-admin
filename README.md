@@ -17,15 +17,24 @@ localhost behind your reverse proxy. The companion of
 - **Keys**: create a key for a bucket with a profile, *read only* or *read
   and write*; create a bucket with its two keys (`name` and `name-leitura`)
   in one step; give or remove a key's access to a bucket; delete after
-  typing the name. The secret is shown **once**, at creation, with a "copy
-  as `.Renviron`/`.env` lines" button; the console never stores it and
-  never shows it again.
+  typing the name. The secret is shown at creation with a "copy as
+  `.Renviron`/`.env` lines" button; the console never stores it. An
+  administrator can **show it again** (every reveal is audited) or
+  **rotate** the key: a new key with the same name and permissions
+  replaces the old one at once.
 - **Administrators**: invitation links (one use, 24 h), passkeys per
   administrator (add, remove, never the last one), disable/enable.
 - **Audit**: who did what, when, from which IP; exportable as JSON.
 
 What it does not do, on purpose: browse objects, ACLs, bucket policies,
 website access, quotas (planned), cluster layout.
+
+## Look
+
+The console follows the design system of the Condepe/Fidem platform
+(Pernambuco's institutional palette: navy base, blue for actions, the
+vibrant colours only as accents; Saira and JetBrains Mono, served by the
+binary itself). Light theme, zebra tables, no CDN.
 
 ## Security model
 

@@ -23,8 +23,18 @@
   }
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmtBytes = (n) => { const u = ["B", "kB", "MB", "GB", "TB"]; let i = 0, v = Number(n || 0); while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; } return i ? `${v.toFixed(1)} ${u[i]}` : `${v} B`; };
-  const fmtDate = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? esc(s) : d.toLocaleString(); };
+  const fmtDate = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? esc(s) : `<span class="date">${d.toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" })} <span class="muted">${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span></span>`; };
   const perms = (p) => (p.owner ? `<span class="perm rw">owner</span>` : "") + (p.write ? `<span class="perm rw">write</span>` : "") + (p.read ? `<span class="perm">read</span>` : "");
+  const ICONS = {
+    eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    rotate: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
+    unlink: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 15l6-6"/><path d="M11 6l1.5-1.5a4 4 0 0 1 5.7 5.7L17 11"/><path d="M13 18l-1.5 1.5a4 4 0 0 1-5.7-5.7L7 13"/><path d="M4 4l16 16"/></svg>',
+    userOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="4"/><path d="M2 21a8 8 0 0 1 13-6"/><path d="M17 15l5 5M22 15l-5 5"/></svg>',
+    userOn: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="4"/><path d="M2 21a8 8 0 0 1 13-6"/><path d="M16 18l2 2 4-4"/></svg>',
+  };
+  const iconBtn = (name, tip, attrs, danger) => `<button class="btn icon${danger ? " danger-icon" : ""}" data-tip="${esc(tip)}" aria-label="${esc(tip)}" ${attrs}>${ICONS[name]}</button>`;
+
   function render(id) { view.innerHTML = ""; view.appendChild($(id).content.cloneNode(true)); }
   function form(f) { const o = {}; new FormData(f).forEach((v, k) => { o[k] = v; }); f.querySelectorAll("input[type=checkbox]").forEach((c) => { o[c.name] = c.checked; }); return o; }
   async function busy(btn, fn) { if (!btn) return fn(); btn.disabled = true; try { return await fn(); } finally { btn.disabled = false; } }
@@ -99,8 +109,9 @@
     rows.innerHTML = buckets.length ? buckets.map((b) => {
       const name = (b.globalAliases && b.globalAliases[0]) || b.id.slice(0, 12);
       if (b.error) return `<tr><td><a href="#bucket/${esc(b.id)}">${esc(name)}</a></td><td colspan="4" class="error">${esc(b.error)}</td></tr>`;
-      return `<tr><td><a href="#bucket/${esc(b.id)}"><b>${esc(name)}</b></a></td><td class="num">${b.objects}</td><td class="num">${fmtBytes(b.bytes)}</td><td>${b.keys.map((k) => `<span class="mono">${esc(k.name)}</span> ${perms(k.permissions)}`).join("<br>") || '<span class="muted">none</span>'}</td><td>${fmtDate(b.created)}</td></tr>`;
+      return `<tr><td><a href="#bucket/${esc(b.id)}" class="cell-title">${esc(name)}</a><span class="cell-sub">${esc(b.id.slice(0, 16))}…</span></td><td class="num">${b.objects}</td><td class="num">${fmtBytes(b.bytes)}</td><td>${b.keys.length ? `<div class="keylist">${b.keys.map((k) => `<span><span class="mono">${esc(k.name)}</span> ${perms(k.permissions)}</span>`).join("")}</div>` : '<span class="muted">none</span>'}</td><td>${fmtDate(b.created)}</td></tr>`;
     }).join("") : `<tr><td colspan="5" class="empty">No buckets yet.</td></tr>`;
+    $("#bucket-count").textContent = buckets.length ? `(${buckets.length})` : "";
     $("#new-bucket").onclick = () => { $("#bucket-form").hidden = false; $("#create-bucket input[name=name]").focus(); };
     $("#cancel-bucket").onclick = () => { $("#bucket-form").hidden = true; };
     $("#create-bucket").addEventListener("submit", async (e) => {
@@ -115,11 +126,11 @@
     });
   }
 
-  function showSecrets(keys, done) {
-    view.innerHTML = `<p><a href="#buckets">← Buckets</a></p><h1>New keys</h1>`;
+  function showSecrets(keys, done, title, note) {
+    view.innerHTML = `<h1>${esc(title || "New keys")}</h1>` + (note ? `<p class="muted">${esc(note)}</p>` : "");
     keys.forEach((k) => {
       const t = $("#t-secret").content.cloneNode(true);
-      const p = k.permissions; const prof = p.write ? "read and write" : "read only";
+      const p = k.permissions || {}; const prof = p.write ? "read and write" : (p.read ? "read only" : "no bucket");
       t.querySelectorAll("[data-f]").forEach((el) => { const f = el.dataset.f; el.textContent = f === "permissions" ? prof : (k[f] || ""); });
       t.querySelector("[data-copy]").onclick = () => { navigator.clipboard.writeText(`# ${k.name} (${prof}) — bucket ${k.bucket}\nAWS_ACCESS_KEY_ID=${k.accessKeyId}\nAWS_SECRET_ACCESS_KEY=${k.secretAccessKey}\n`); toast("Copied"); };
       t.querySelector("[data-done]").onclick = () => done();
@@ -134,7 +145,7 @@
     $("#b-name").textContent = name; $("#b-id").textContent = b.id;
     $("#b-objects").textContent = b.objects; $("#b-size").textContent = fmtBytes(b.bytes); $("#b-mpu").textContent = b.unfinishedMultipartUploads;
     const rows = $("#b-keys");
-    rows.innerHTML = b.keys.length ? b.keys.map((k) => `<tr><td><b>${esc(k.name)}</b></td><td class="mono">${esc(k.accessKeyId)}</td><td>${perms(k.permissions)}</td><td><button class="btn small" data-deny="${esc(k.accessKeyId)}">Remove access</button></td></tr>`).join("") : `<tr><td colspan="4" class="empty">No key has access to this bucket.</td></tr>`;
+    rows.innerHTML = b.keys.length ? b.keys.map((k) => `<tr><td><span class="cell-title">${esc(k.name)}</span><span class="cell-sub">${esc(k.accessKeyId)}</span></td><td>${perms(k.permissions)}</td><td><div class="actions">${iconBtn("unlink", "Remove access", `data-deny="${esc(k.accessKeyId)}"`, true)}</div></td></tr>`).join("") : `<tr><td colspan="3" class="empty">No key has access to this bucket.</td></tr>`;
     rows.querySelectorAll("[data-deny]").forEach((btn) => { btn.onclick = () => busy(btn, async () => { try { await api(`/buckets/${encodeURIComponent(id)}/deny`, { key_id: btn.dataset.deny }); toast("Access removed"); showBucket(id); } catch (x) { toast(x.message, true); } }); });
     $("#b-add-key").onclick = async () => {
       $("#b-key-form").hidden = false;
@@ -154,10 +165,21 @@
 
   async function showKeys() {
     render("#t-keys");
-    const rows = $("#key-rows"); rows.innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+    const rows = $("#key-rows"); rows.innerHTML = `<tr><td colspan="4" class="empty">Loading…</td></tr>`;
     const [keys, buckets] = await Promise.all([api("/keys"), api("/buckets")]);
     $("#key-bucket").innerHTML = `<option value="">(none yet)</option>` + buckets.map((b) => `<option value="${esc(b.id)}">${esc((b.globalAliases || [])[0] || b.id.slice(0, 12))}</option>`).join("");
-    rows.innerHTML = keys.length ? keys.map((k) => `<tr><td><b>${esc(k.name)}</b></td><td class="mono">${esc(k.accessKeyId)}</td><td>${(k.buckets || []).map((b) => `<a href="#bucket/${esc(b.id)}">${esc((b.globalAliases || [])[0] || b.id.slice(0, 12))}</a> ${perms(b.permissions)}`).join("<br>") || '<span class="muted">no bucket</span>'}</td><td>${fmtDate(k.created)}</td><td><button class="btn small" data-del="${esc(k.accessKeyId)}" data-name="${esc(k.name)}">Delete</button></td></tr>`).join("") : `<tr><td colspan="5" class="empty">No keys yet.</td></tr>`;
+    $("#key-count").textContent = keys.length ? `(${keys.length})` : "";
+    rows.innerHTML = keys.length ? keys.map((k) => `<tr><td><span class="cell-title">${esc(k.name)}</span><span class="cell-sub">${esc(k.accessKeyId)}</span></td><td>${(k.buckets || []).length ? `<div class="keylist">${k.buckets.map((b) => `<span><a href="#bucket/${esc(b.id)}">${esc((b.globalAliases || [])[0] || b.id.slice(0, 12))}</a> ${perms(b.permissions)}</span>`).join("")}</div>` : '<span class="muted">no bucket</span>'}</td><td>${fmtDate(k.created)}</td><td><div class="actions">${iconBtn("eye", "Show secret", `data-reveal="${esc(k.accessKeyId)}"`)}${iconBtn("rotate", "Rotate key (new secret)", `data-rotate="${esc(k.accessKeyId)}" data-name="${esc(k.name)}"`)}${iconBtn("trash", "Delete key", `data-del="${esc(k.accessKeyId)}" data-name="${esc(k.name)}"`, true)}</div></td></tr>`).join("") : `<tr><td colspan="4" class="empty">No keys yet.</td></tr>`;
+    rows.querySelectorAll("[data-reveal]").forEach((btn) => {
+      btn.onclick = () => busy(btn, async () => { try { const k = await api(`/keys/${encodeURIComponent(btn.dataset.reveal)}/secret`); showSecrets([k], () => showKeys(), "Secret of an existing key", "Revealing a secret is recorded in the audit log. Prefer rotating the key if the secret may have leaked."); } catch (x) { toast(x.message, true); } });
+    });
+    rows.querySelectorAll("[data-rotate]").forEach((btn) => {
+      btn.onclick = async () => {
+        const typed = prompt(`Rotate key ${btn.dataset.name}? A new secret replaces the old one at once; every program using the old secret stops working until updated. Type the key's name to confirm.`);
+        if (typed === null) return;
+        await busy(btn, async () => { try { const k = await api(`/keys/${encodeURIComponent(btn.dataset.rotate)}/rotate`, { name: typed }); showSecrets([k], () => showKeys(), "New secret", "The old access key id and secret no longer work."); } catch (x) { toast(x.message, true); } });
+      };
+    });
     rows.querySelectorAll("[data-del]").forEach((btn) => {
       btn.onclick = async () => {
         const typed = prompt(`Delete key ${btn.dataset.name}? Every program using it stops working. Type its name to confirm.`);
@@ -178,7 +200,8 @@
   async function showAdmins() {
     render("#t-admins");
     const d = await api("/admins");
-    $("#admin-rows").innerHTML = d.admins.map((a) => `<tr><td><b>${esc(a.name)}</b></td><td>${esc(a.email)}</td><td>${fmtDate(a.created_at)}</td><td>${a.disabled ? '<span class="pill bad">disabled</span>' : '<span class="pill ok">active</span>'}</td><td>${a.id === me.id ? '<span class="muted">you</span>' : `<button class="btn small" data-toggle="${esc(a.id)}" data-disabled="${a.disabled}">${a.disabled ? "Enable" : "Disable"}</button>`}</td></tr>`).join("");
+    $("#admin-count").textContent = d.admins.length ? `(${d.admins.length})` : "";
+    $("#admin-rows").innerHTML = d.admins.map((a) => `<tr><td><span class="cell-title">${esc(a.name)}</span></td><td>${esc(a.email)}</td><td>${fmtDate(a.created_at)}</td><td>${a.disabled ? '<span class="pill bad">disabled</span>' : '<span class="pill ok">active</span>'}</td><td><div class="actions">${a.id === me.id ? '<span class="muted small">you</span>' : iconBtn(a.disabled ? "userOn" : "userOff", a.disabled ? "Enable administrator" : "Disable administrator", `data-toggle="${esc(a.id)}" data-disabled="${a.disabled}"`, !a.disabled)}</div></td></tr>`).join("");
     $("#admin-rows").querySelectorAll("[data-toggle]").forEach((btn) => {
       btn.onclick = () => busy(btn, async () => { try { await api(`/admins/${encodeURIComponent(btn.dataset.toggle)}/${btn.dataset.disabled === "true" ? "enable" : "disable"}`, {}); showAdmins(); } catch (x) { toast(x.message, true); } });
     });
@@ -196,6 +219,7 @@
   async function showAudit() {
     render("#t-audit");
     const rows = await api("/audit?limit=500");
+    $("#audit-count").textContent = rows.length ? `(${rows.length})` : "";
     $("#audit-rows").innerHTML = rows.length ? rows.map((r) => `<tr><td class="mono">${fmtDate(r.ts)}</td><td>${esc(r.admin)}</td><td><span class="pill">${esc(r.action)}</span></td><td class="mono">${esc(r.target)}</td><td class="mono small">${esc(JSON.stringify(r.details))}</td><td class="mono">${esc(r.ip)}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">Nothing yet.</td></tr>`;
     $("#audit-export").href = URL.createObjectURL(new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" }));
   }
@@ -204,7 +228,7 @@
     render("#t-profile");
     $("#p-name").textContent = me.name; $("#p-email").textContent = me.email;
     const rows = await api("/passkeys");
-    $("#passkey-rows").innerHTML = rows.map((p) => `<tr><td><b>${esc(p.name)}</b></td><td>${fmtDate(p.created_at)}</td><td>${fmtDate(p.last_used_at) || '<span class="muted">never</span>'}</td><td>${rows.length > 1 ? `<button class="btn small" data-del="${p.id}">Remove</button>` : '<span class="muted">last one</span>'}</td></tr>`).join("");
+    $("#passkey-rows").innerHTML = rows.map((p) => `<tr><td><span class="cell-title">${esc(p.name)}</span></td><td>${fmtDate(p.created_at)}</td><td>${fmtDate(p.last_used_at) || '<span class="muted">never</span>'}</td><td><div class="actions">${rows.length > 1 ? iconBtn("trash", "Remove passkey", `data-del="${p.id}"`, true) : '<span class="muted small">last one</span>'}</div></td></tr>`).join("");
     $("#passkey-rows").querySelectorAll("[data-del]").forEach((btn) => { btn.onclick = () => busy(btn, async () => { try { await api(`/passkeys/${btn.dataset.del}/delete`, {}); showProfile(); } catch (x) { toast(x.message, true); } }); });
     $("#add-passkey").onclick = () => { $("#passkey-form").hidden = false; $("#create-passkey input").focus(); };
     $("#create-passkey").addEventListener("submit", async (e) => {

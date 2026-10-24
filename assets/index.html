@@ -50,34 +50,39 @@
   </div>
 </template>
 <template id="t-buckets">
-  <div class="head"><h1>Buckets</h1><div id="health" class="pill"></div><button class="btn primary" id="new-bucket">New bucket</button></div>
+  <div class="head"><h1>Buckets <span class="count" id="bucket-count"></span></h1><div id="health" class="pill"></div><button class="btn primary" id="new-bucket">New bucket</button>
+    <p class="lead">One bucket per project, with its own keys. Click a bucket to manage who can read or write it.</p></div>
   <div class="card" id="bucket-form" hidden>
     <h3>New bucket</h3>
     <form id="create-bucket">
-      <label>Name <input name="name" pattern="[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]" required placeholder="projeto" /></label>
-      <label class="check"><input type="checkbox" name="with_keys" checked /> Also create two keys: <code>&lt;name&gt;</code> (read and write) and <code>&lt;name&gt;-leitura</code> (read only)</label>
+      <div class="form-grid">
+        <label>Name <input name="name" pattern="[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]" required placeholder="projeto" autocomplete="off" /></label>
+        <label class="check span"><input type="checkbox" name="with_keys" checked /> Also create two keys: <code>&lt;name&gt;</code> (read and write) and <code>&lt;name&gt;-leitura</code> (read only)</label>
+      </div>
       <div class="row"><button class="btn primary" type="submit">Create</button><button class="btn" type="button" id="cancel-bucket">Cancel</button></div>
     </form>
   </div>
-  <div class="scroll"><table class="data"><thead><tr><th>Bucket</th><th class="num">Objects</th><th class="num">Size</th><th>Keys</th><th>Created</th></tr></thead><tbody id="bucket-rows"></tbody></table></div>
+  <div class="scroll"><table class="data"><thead><tr><th>Bucket</th><th class="num">Objects</th><th class="num">Size</th><th>Keys with access</th><th>Created</th></tr></thead><tbody id="bucket-rows"></tbody></table></div>
 </template>
 <template id="t-bucket">
   <p><a href="#buckets">← Buckets</a></p>
-  <div class="head"><h1 id="b-name"></h1><span class="pill mono" id="b-id"></span></div>
+  <div class="head"><h1 id="b-name"></h1><p class="lead">Bucket id <code id="b-id"></code></p></div>
   <div class="grid f3">
     <div class="card stat"><div class="label">Objects</div><div class="value" id="b-objects"></div></div>
     <div class="card stat"><div class="label">Size</div><div class="value" id="b-size"></div></div>
     <div class="card stat"><div class="label">Unfinished multipart uploads</div><div class="value" id="b-mpu"></div></div>
   </div>
-  <div class="head"><h2>Keys with access</h2><button class="btn" id="b-add-key">Give access to a key</button></div>
+  <div class="head section"><h2>Keys with access</h2><button class="btn" id="b-add-key">Give access to a key</button></div>
   <div class="card" id="b-key-form" hidden>
     <form id="b-allow">
-      <label>Key <select name="key_id" id="b-key-select"></select></label>
-      <label>Profile <select name="profile"><option value="read">read only</option><option value="readwrite">read and write</option></select></label>
+      <div class="form-grid">
+        <label>Key <select name="key_id" id="b-key-select"></select></label>
+        <label>Profile <select name="profile"><option value="read">read only</option><option value="readwrite">read and write</option></select></label>
+      </div>
       <div class="row"><button class="btn primary" type="submit">Allow</button><button class="btn" type="button" id="b-cancel-key">Cancel</button></div>
     </form>
   </div>
-  <div class="scroll"><table class="data"><thead><tr><th>Key</th><th>Access key id</th><th>Permissions</th><th></th></tr></thead><tbody id="b-keys"></tbody></table></div>
+  <div class="scroll"><table class="data"><thead><tr><th>Key</th><th>Permissions</th><th></th></tr></thead><tbody id="b-keys"></tbody></table></div>
   <div class="card danger">
     <h3>Delete this bucket</h3>
     <p class="muted">Only an empty bucket can be deleted. Every key loses access first. Type the bucket's name to confirm.</p>
@@ -85,22 +90,25 @@
   </div>
 </template>
 <template id="t-keys">
-  <div class="head"><h1>Keys</h1><button class="btn primary" id="new-key">New key</button></div>
+  <div class="head"><h1>Keys <span class="count" id="key-count"></span></h1><button class="btn primary" id="new-key">New key</button>
+    <p class="lead">Each key belongs to a project and reaches one bucket with a profile: read only, or read and write. The console never stores secrets; showing or rotating one is recorded in the audit log.</p></div>
   <div class="card" id="key-form" hidden>
     <h3>New key</h3>
     <form id="create-key">
-      <label>Name <input name="name" pattern="[a-z0-9._-]{2,64}" required placeholder="projeto-leitura" /></label>
-      <label>Bucket <select name="bucket_id" id="key-bucket"><option value="">(none yet)</option></select></label>
-      <label>Profile <select name="profile"><option value="read">read only</option><option value="readwrite">read and write</option></select></label>
+      <div class="form-grid">
+        <label>Name <input name="name" pattern="[a-z0-9._-]{2,64}" required placeholder="projeto-leitura" autocomplete="off" /></label>
+        <label>Bucket <select name="bucket_id" id="key-bucket"><option value="">(none yet)</option></select></label>
+        <label>Profile <select name="profile"><option value="read">read only</option><option value="readwrite">read and write</option></select></label>
+      </div>
       <div class="row"><button class="btn primary" type="submit">Create</button><button class="btn" type="button" id="cancel-key">Cancel</button></div>
     </form>
   </div>
-  <div class="scroll"><table class="data"><thead><tr><th>Key</th><th>Access key id</th><th>Buckets</th><th>Created</th><th></th></tr></thead><tbody id="key-rows"></tbody></table></div>
+  <div class="scroll"><table class="data"><thead><tr><th>Key</th><th>Buckets</th><th>Created</th><th></th></tr></thead><tbody id="key-rows"></tbody></table></div>
 </template>
 <template id="t-secret">
   <div class="card secret">
-    <h3>Save this secret now</h3>
-    <p class="muted">It is shown once. The console does not store it and will not show it again; if it is lost, create a new key.</p>
+    <h3>Save this secret in a safe place</h3>
+    <p class="muted">The console does not store it. An administrator can show it again from the Keys page, and every reveal is written to the audit log.</p>
     <div class="kv"><span>Name</span><code class="sel" data-f="name"></code></div>
     <div class="kv"><span>Bucket</span><code class="sel" data-f="bucket"></code></div>
     <div class="kv"><span>Permissions</span><code class="sel" data-f="permissions"></code></div>
@@ -110,24 +118,26 @@
   </div>
 </template>
 <template id="t-admins">
-  <div class="head"><h1>Administrators</h1><button class="btn primary" id="new-invite">Invite</button></div>
+  <div class="head"><h1>Administrators <span class="count" id="admin-count"></span></h1><button class="btn primary" id="new-invite">Invite</button>
+    <p class="lead">Everyone here sees and can do everything; every action is audited. Access is by passkey only.</p></div>
   <div class="card" id="invite-form-card" hidden>
     <h3>Invitation</h3>
     <p class="muted">A one-time link, valid for 24 hours. Send it through a secure channel; whoever opens it registers a passkey and becomes an administrator.</p>
-    <form id="create-invite" class="row"><input name="name" placeholder="Name" required maxlength="80" /><input name="email" type="email" placeholder="e-mail" required /><button class="btn primary" type="submit">Create link</button></form>
+    <form id="create-invite"><div class="form-grid"><label>Name <input name="name" placeholder="Nome" required maxlength="80" /></label><label>E-mail <input name="email" type="email" placeholder="nome@orgao.pe.gov.br" required /></label></div><div class="row"><button class="btn primary" type="submit">Create link</button></div></form>
     <div id="invite-result" hidden><code class="sel block" id="invite-url"></code><button class="btn" id="copy-invite">Copy link</button></div>
   </div>
   <div class="scroll"><table class="data"><thead><tr><th>Name</th><th>E-mail</th><th>Since</th><th>Status</th><th></th></tr></thead><tbody id="admin-rows"></tbody></table></div>
-  <h2>Pending invitations</h2>
+  <h2 class="section">Pending invitations</h2>
   <div class="scroll"><table class="data"><thead><tr><th>Name</th><th>E-mail</th><th>By</th><th>Expires</th></tr></thead><tbody id="invite-rows"></tbody></table></div>
 </template>
 <template id="t-audit">
-  <div class="head"><h1>Audit</h1><a class="btn" id="audit-export" download="s3pe-admin-audit.json">Export JSON</a></div>
+  <div class="head"><h1>Audit <span class="count" id="audit-count"></span></h1><a class="btn" id="audit-export" download="s3pe-admin-audit.json">Export JSON</a>
+    <p class="lead">Who did what, when and from where. Newest first; the last 500 entries.</p></div>
   <div class="scroll"><table class="data"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr></thead><tbody id="audit-rows"></tbody></table></div>
 </template>
 <template id="t-profile">
-  <div class="head"><h1 id="p-name"></h1><button class="btn primary" id="add-passkey">Add a passkey</button></div>
-  <p class="muted" id="p-email"></p>
+  <div class="head"><h1 id="p-name"></h1><button class="btn primary" id="add-passkey">Add a passkey</button>
+    <p class="lead" id="p-email"></p></div>
   <div class="card" id="passkey-form" hidden>
     <form id="create-passkey" class="row"><input name="passkey_name" placeholder="Name for this device" maxlength="60" required /><button class="btn primary" type="submit">Register</button></form>
   </div>

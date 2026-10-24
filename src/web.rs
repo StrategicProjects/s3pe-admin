@@ -18,6 +18,9 @@ const COOKIE: &str = "s3pe_admin";
 const INDEX: &str = include_str!("../assets/index.html");
 const APP_JS: &str = include_str!("../assets/app.js");
 const STYLE: &str = include_str!("../assets/style.css");
+const FONT_SAIRA: &[u8] = include_bytes!("../assets/fonts/saira.woff2");
+const FONT_SAIRA_CONDENSED: &[u8] = include_bytes!("../assets/fonts/saira-condensed-700.woff2");
+const FONT_MONO: &[u8] = include_bytes!("../assets/fonts/jetbrains-mono.woff2");
 
 /// A JSON error with a status.
 pub struct ApiError(StatusCode, String);
@@ -88,6 +91,8 @@ pub fn router(app: App) -> Router {
         .route("/keys", get(keys).post(create_key))
         .route("/keys/{id}", get(key))
         .route("/keys/{id}/delete", post(delete_key))
+        .route("/keys/{id}/secret", get(key_secret))
+        .route("/keys/{id}/rotate", post(rotate_key))
         .route("/audit", get(audit))
         .route("/admins", get(admins))
         .route("/admins/invite", post(admin_invite))
@@ -103,6 +108,7 @@ pub fn router(app: App) -> Router {
         .route(&format!("{base}/"), get(index))
         .route(&format!("{base}/app.js"), get(app_js))
         .route(&format!("{base}/style.css"), get(style))
+        .route(&format!("{base}/fonts/{{name}}"), get(font))
         .nest(&format!("{base}/api"), api);
     if !base.is_empty() {
         router = router
@@ -128,7 +134,9 @@ async fn security_headers(req: axum::extract::Request, next: Next) -> Response {
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
-    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if !h.contains_key(header::CACHE_CONTROL) {
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
     h.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
@@ -279,6 +287,23 @@ async fn app_js() -> Response {
 
 async fn style() -> Response {
     ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], STYLE).into_response()
+}
+
+async fn font(Path(name): Path<String>) -> Response {
+    let bytes = match name.as_str() {
+        "saira.woff2" => FONT_SAIRA,
+        "saira-condensed-700.woff2" => FONT_SAIRA_CONDENSED,
+        "jetbrains-mono.woff2" => FONT_MONO,
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    (
+        [
+            (header::CONTENT_TYPE, "font/woff2"),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        bytes,
+    )
+        .into_response()
 }
 
 async fn redirect_to_base(State(app): State<App>) -> Response {
@@ -995,6 +1020,55 @@ async fn create_key(
     // The secret is shown once, here, and never stored by the console.
     Ok(Json(
         json!({ "name": name, "accessKeyId": k.access_key_id, "secretAccessKey": k.secret_access_key, "bucket": bucket_name, "permissions": perm }),
+    ))
+}
+
+/// Reveals a key's secret. Every reveal is audited.
+async fn key_secret(
+    State(app): State<App>,
+    ext: axum::http::Extensions,
+    Path(id): Path<String>,
+) -> ApiResult {
+    let s = session(&ext)?;
+    let c = ctx(&ext);
+    let info = app.garage.key_info(&id, true).await?;
+    app.db.audit(
+        &s.admin.email,
+        "key.secret_revealed",
+        &info.name,
+        json!({ "access_key_id": id }),
+        &c.ip,
+    )?;
+    Ok(Json(
+        json!({ "name": info.name, "accessKeyId": info.access_key_id, "secretAccessKey": info.secret_access_key, "bucket": info.buckets.iter().filter_map(|b| b.global_aliases.first().cloned()).collect::<Vec<_>>().join(", "), "permissions": info.buckets.first().map(|b| b.permissions.clone()).unwrap_or_default() }),
+    ))
+}
+
+/// Replaces a key by a new one with the same name and the same bucket
+/// permissions, then deletes the old one: programs using the old secret
+/// stop working at once. Confirmed by typing the key's name.
+async fn rotate_key(
+    State(app): State<App>,
+    ext: axum::http::Extensions,
+    Path(id): Path<String>,
+    Json(body): Json<Confirm>,
+) -> ApiResult {
+    let s = session(&ext)?;
+    let c = ctx(&ext);
+    let old = app.garage.key_info(&id, false).await?;
+    if body.name.trim() != old.name {
+        return Err(bad("type the key's name to confirm"));
+    }
+    let new = app.garage.create_key(&old.name).await?;
+    for b in &old.buckets {
+        app.garage
+            .allow(&b.id, &new.access_key_id, &b.permissions)
+            .await?;
+    }
+    app.garage.delete_key(&id).await?;
+    app.db.audit(&s.admin.email, "key.rotated", &old.name, json!({ "old_access_key_id": id, "new_access_key_id": new.access_key_id, "buckets": old.buckets.iter().filter_map(|b| b.global_aliases.first().cloned()).collect::<Vec<_>>() }), &c.ip)?;
+    Ok(Json(
+        json!({ "name": old.name, "accessKeyId": new.access_key_id, "secretAccessKey": new.secret_access_key, "bucket": old.buckets.iter().filter_map(|b| b.global_aliases.first().cloned()).collect::<Vec<_>>().join(", "), "permissions": old.buckets.first().map(|b| b.permissions.clone()).unwrap_or_default() }),
     ))
 }
 
