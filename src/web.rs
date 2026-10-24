@@ -713,14 +713,24 @@ async fn admin_enable(
 
 async fn buckets(State(app): State<App>, ext: axum::http::Extensions) -> ApiResult {
     session(&ext)?;
-    let list = app.garage.list_buckets().await?;
-    let mut out = Vec::with_capacity(list.len());
-    for b in list {
-        match app.garage.bucket_info(&b.id).await {
-            Ok(info) => out.push(serde_json::to_value(&info)?),
-            Err(e) => out.push(json!({ "id": b.id, "globalAliases": b.global_aliases, "created": b.created, "error": e.to_string() })),
+    let mut out: Vec<Value> = match app.garage.list_buckets_info().await {
+        Ok(infos) => infos
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<Result<_, _>>()?,
+        Err(e) => {
+            // Older Garage without ListBucketsInfo: one call per bucket.
+            tracing::debug!("ListBucketsInfo unavailable ({e}); falling back to GetBucketInfo");
+            let mut v = Vec::new();
+            for b in app.garage.list_buckets().await? {
+                match app.garage.bucket_info(&b.id).await {
+                    Ok(info) => v.push(serde_json::to_value(&info)?),
+                    Err(e) => v.push(json!({ "id": b.id, "globalAliases": b.global_aliases, "created": b.created, "error": e.to_string() })),
+                }
+            }
+            v
         }
-    }
+    };
     out.sort_by_key(|v| {
         v.get("globalAliases")
             .and_then(|a| a.get(0))
@@ -945,16 +955,25 @@ async fn deny_key(
 
 async fn keys(State(app): State<App>, ext: axum::http::Extensions) -> ApiResult {
     session(&ext)?;
-    let list = app.garage.list_keys().await?;
-    let mut out = Vec::with_capacity(list.len());
-    for k in list {
-        match app.garage.key_info(&k.id, false).await {
-            Ok(info) => out.push(serde_json::to_value(&info)?),
-            Err(e) => {
-                out.push(json!({ "accessKeyId": k.id, "name": k.name, "error": e.to_string() }))
+    let mut out: Vec<Value> = match app.garage.list_keys_info().await {
+        Ok(infos) => infos
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<Result<_, _>>()?,
+        Err(e) => {
+            tracing::debug!("ListKeysInfo unavailable ({e}); falling back to GetKeyInfo");
+            let mut v = Vec::new();
+            for k in app.garage.list_keys().await? {
+                match app.garage.key_info(&k.id, false).await {
+                    Ok(info) => v.push(serde_json::to_value(&info)?),
+                    Err(e) => v.push(
+                        json!({ "accessKeyId": k.id, "name": k.name, "error": e.to_string() }),
+                    ),
+                }
             }
+            v
         }
-    }
+    };
     out.sort_by_key(|v| {
         v.get("name")
             .and_then(|s| s.as_str())

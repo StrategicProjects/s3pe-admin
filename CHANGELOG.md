@@ -28,3 +28,17 @@ Build: OpenSSL vendored, so the Linux release binary is fully static.
 ## 0.2.1 — 2026-10-24
 
 More breathing room between the navy bar and the page header.
+
+## 0.3.0 — 2026-10-24
+
+- **Overview** page (the new home): KPIs (buckets, objects and bytes, keys
+  and how many can write, administrators and pending invitations,
+  unfinished multipart uploads), alerts (keys without a bucket, buckets no
+  key can reach, secret reveals in the last 7 days), largest buckets and
+  recent activity.
+- Faster: buckets and keys come from Garage's `ListBucketsInfo` /
+  `ListKeysInfo` in one call each (fallback to one call per item on older
+  Garage), and the UI keeps the last answer of each view, shows it at once
+  and refreshes in the background; mutations clear the cache.
+- Audit table: details rendered as key: value chips that wrap, dates and
+  IPs kept on one line; no more overflow.

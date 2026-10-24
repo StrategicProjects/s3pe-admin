@@ -202,6 +202,20 @@ impl Garage {
         self.get("/v2/ListBuckets", &[]).await
     }
 
+    /// Every bucket with its full information, in one call (Garage ≥ 2.0).
+    pub async fn list_buckets_info(&self) -> Result<Vec<BucketInfo>> {
+        self.get("/v2/ListBucketsInfo", &[]).await
+    }
+
+    /// Every key with its buckets and permissions, in one call, secrets left out.
+    pub async fn list_keys_info(&self) -> Result<Vec<KeyInfo>> {
+        let mut keys: Vec<KeyInfo> = self.get("/v2/ListKeysInfo", &[]).await?;
+        for k in &mut keys {
+            k.secret_access_key = None;
+        }
+        Ok(keys)
+    }
+
     pub async fn bucket_info(&self, id: &str) -> Result<BucketInfo> {
         self.get("/v2/GetBucketInfo", &[("id", id)]).await
     }

@@ -13,6 +13,7 @@
   <div class="wrap nav-inner">
     <div class="brand"><span class="logo">🪣</span> s3pe <span class="muted">· admin</span></div>
     <nav class="nav-links" id="nav" hidden>
+      <a href="#overview" data-view="overview">Overview</a>
       <a href="#buckets" data-view="buckets">Buckets</a>
       <a href="#keys" data-view="keys">Keys</a>
       <a href="#admins" data-view="admins">Administrators</a>
@@ -47,6 +48,16 @@
       <button class="btn primary" type="submit">Create passkey and sign in</button>
     </form>
     <p class="error" id="invite-error" hidden></p>
+  </div>
+</template>
+<template id="t-overview">
+  <div class="head"><h1>Overview</h1><div id="o-health" class="pill"></div>
+    <p class="lead">The store at a glance: what exists, who can reach it, and what happened lately.</p></div>
+  <div class="alerts" id="o-alerts" hidden></div>
+  <div class="kpis" id="o-kpis"></div>
+  <div class="two">
+    <div class="card"><h3>Largest buckets</h3><div class="bars" id="o-bars"></div></div>
+    <div class="card"><h3>Recent activity</h3><div class="feed" id="o-feed"></div><p class="small" style="margin:12px 0 0"><a href="#audit">Full audit log →</a></p></div>
   </div>
 </template>
 <template id="t-buckets">

@@ -12,11 +12,23 @@
     const opts = { method: method || (body === undefined ? "GET" : "POST"), headers: { "X-Requested-With": "s3pe-admin" }, credentials: "same-origin" };
     if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
     const r = await fetch(API + path, opts);
+    if (opts.method !== "GET" && r.ok) invalidate("/buckets", "/keys", "/audit", "/admins", "/passkeys");
     let data = null;
     try { data = await r.json(); } catch (_) { /* empty body */ }
     if (!r.ok) throw new Error((data && data.error) || `HTTP ${r.status}`);
     return data;
   }
+  // Cache of GET results by path: a view renders the last known data at once
+  // and re-renders when the fresh answer differs. Mutations clear it.
+  const cache = new Map();
+  async function cached(path, render) {
+    if (cache.has(path)) { try { render(cache.get(path), true); } catch (_) { /* stale render failed; the fresh one follows */ } }
+    const fresh = await api(path);
+    const json = JSON.stringify(fresh);
+    if (!cache.has(path) || JSON.stringify(cache.get(path)) !== json) { cache.set(path, fresh); render(fresh, false); }
+    return fresh;
+  }
+  function invalidate(...prefixes) { for (const k of [...cache.keys()]) if (prefixes.some((p) => k.startsWith(p))) cache.delete(k); }
   function toast(msg, err) {
     const t = $("#toast"); t.textContent = msg; t.className = "toast" + (err ? " err" : ""); t.hidden = false;
     clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, err ? 6000 : 3000);
@@ -66,6 +78,51 @@
     return api(finishPath, { challenge_id: begin.challenge_id, credential: regCredential(cred), passkey_name: passkeyName || "" });
   }
 
+  const details = (d) => { if (!d || typeof d !== "object") return ""; const parts = Object.entries(d).filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && !v.length)).map(([k, v]) => `<span><b>${esc(k)}</b>: ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</span>`); return parts.length ? `<div class="details">${parts.join("")}</div>` : '<span class="muted">—</span>'; };
+  const ago = (s) => { const d = new Date(s); if (isNaN(d)) return ""; const m = Math.round((Date.now() - d) / 60000); if (m < 1) return "just now"; if (m < 60) return `${m} min ago`; const h = Math.round(m / 60); if (h < 48) return `${h} h ago`; return `${Math.round(h / 24)} d ago`; };
+  const ACTION_LABEL = { "bucket.created": "created bucket", "bucket.deleted": "deleted bucket", "key.created": "created key", "key.deleted": "deleted key", "key.rotated": "rotated key", "key.secret_revealed": "revealed the secret of", "bucket.key.allowed": "gave access on", "bucket.key.denied": "removed access on", "login": "signed in", "admin.joined": "joined as administrator", "admin.invited": "invited", "admin.disabled": "disabled", "admin.enabled": "enabled", "passkey.added": "added passkey", "passkey.removed": "removed passkey" };
+
+  async function showOverview() {
+    render("#t-overview");
+    const kpi = (label, value, hint, tone) => `<div class="kpi ${tone || ""}"><div class="label">${esc(label)}</div><div class="value">${value}</div>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
+    api("/health").then((h) => { const p = $("#o-health"); p.textContent = `Garage ${h.status} · ${h.connectedNodes}/${h.knownNodes} nodes · ${h.partitionsAllOk}/${h.partitions} partitions ok`; p.className = "pill " + (h.status === "healthy" ? "ok" : "bad"); }).catch((x) => { const p = $("#o-health"); p.textContent = "Garage unreachable"; p.className = "pill bad"; });
+    let buckets = [], keys = [], admins = { admins: [], invites: [] }, audit = [];
+    const paint = () => {
+      const objects = buckets.reduce((a, b) => a + (b.objects || 0), 0);
+      const bytes = buckets.reduce((a, b) => a + (b.bytes || 0), 0);
+      const mpu = buckets.reduce((a, b) => a + (b.unfinishedMultipartUploads || 0), 0);
+      const noKey = buckets.filter((b) => !(b.keys || []).length);
+      const orphanKeys = keys.filter((k) => !(k.buckets || []).length);
+      const rw = keys.filter((k) => (k.buckets || []).some((b) => b.permissions && b.permissions.write)).length;
+      const active = admins.admins.filter((a) => !a.disabled).length;
+      const pending = admins.invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date()).length;
+      const logins7 = audit.filter((e) => e.action === "login" && Date.now() - new Date(e.ts) < 7 * 86400000).length;
+      $("#o-kpis").innerHTML =
+        kpi("Buckets", buckets.length, noKey.length ? `${noKey.length} without any key` : "all reachable by a key") +
+        kpi("Objects", objects.toLocaleString(), `${fmtBytes(bytes)} stored`, "teal") +
+        kpi("Keys", keys.length, `${rw} can write · ${keys.length - rw} read only`, "navy") +
+        kpi("Administrators", active, pending ? `${pending} invitation${pending > 1 ? "s" : ""} pending` : `${logins7} sign-in${logins7 === 1 ? "" : "s"} this week`, "amber") +
+        kpi("Unfinished uploads", mpu, mpu ? "multipart uploads never completed" : "nothing hanging", mpu ? "amber" : "");
+      const alerts = [];
+      if (orphanKeys.length) alerts.push(`<div class="alert">🔑 ${orphanKeys.length} key${orphanKeys.length > 1 ? "s" : ""} without any bucket: <span class="mono">${orphanKeys.map((k) => esc(k.name)).join(", ")}</span>. <a href="#keys">Review or delete</a>.</div>`);
+      if (noKey.length) alerts.push(`<div class="alert">🪣 ${noKey.length} bucket${noKey.length > 1 ? "s" : ""} no key can reach: <span class="mono">${noKey.map((b) => esc((b.globalAliases || [])[0] || b.id.slice(0, 12))).join(", ")}</span>.</div>`);
+      const reveals = audit.filter((e) => e.action === "key.secret_revealed" && Date.now() - new Date(e.ts) < 7 * 86400000).length;
+      if (reveals) alerts.push(`<div class="alert">👁 ${reveals} secret reveal${reveals > 1 ? "s" : ""} in the last 7 days. <a href="#audit">See who</a>.</div>`);
+      $("#o-alerts").innerHTML = alerts.join(""); $("#o-alerts").hidden = !alerts.length;
+      const top = [...buckets].sort((a, b) => (b.bytes || 0) - (a.bytes || 0)).slice(0, 6); const max = Math.max(1, ...top.map((b) => b.bytes || 0));
+      $("#o-bars").innerHTML = top.length ? top.map((b) => `<div class="bar"><a class="name" href="#bucket/${esc(b.id)}">${esc((b.globalAliases || [])[0] || b.id.slice(0, 12))}</a><div class="track"><div class="fill" style="width:${Math.max(2, Math.round(100 * (b.bytes || 0) / max))}%"></div></div><div class="n">${fmtBytes(b.bytes)} · ${(b.objects || 0).toLocaleString()} obj</div></div>`).join("") : `<p class="muted">No buckets yet.</p>`;
+      const feed = audit.filter((e) => e.action !== "login").slice(0, 8);
+      $("#o-feed").innerHTML = feed.length ? feed.map((e) => `<div class="ev"><div><b>${esc(ACTION_LABEL[e.action] || e.action)}</b> <span class="mono">${esc(e.target)}</span></div><div class="muted small nowrap">${ago(e.ts)}</div><div class="who">${esc(e.admin)}</div></div>`).join("") : `<p class="muted">Nothing yet.</p>`;
+    };
+    await Promise.all([
+      cached("/buckets", (d) => { buckets = d; paint(); }).catch(() => {}),
+      cached("/keys", (d) => { keys = d; paint(); }).catch(() => {}),
+      cached("/admins", (d) => { admins = d; paint(); }).catch(() => {}),
+      cached("/audit?limit=500", (d) => { audit = d; paint(); }).catch(() => {}),
+    ]);
+    paint();
+  }
+
   // ---------- views
   async function showLogin(error) {
     $("#nav").hidden = true; render("#t-login");
@@ -77,7 +134,7 @@
           const begin = await api("/login/begin", { email: form(e.target).email });
           const cred = await navigator.credentials.get({ publicKey: requestOptions(begin.options) });
           const r = await api("/login/finish", { challenge_id: begin.challenge_id, credential: authCredential(cred) });
-          me = r.admin; location.hash = "#buckets"; start();
+          me = r.admin; location.hash = "#overview"; start();
         } catch (x) { err.textContent = x.message; err.hidden = false; }
       });
     });
@@ -105,13 +162,15 @@
     render("#t-buckets");
     const rows = $("#bucket-rows"); rows.innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
     api("/health").then((h) => { const p = $("#health"); p.textContent = `Garage ${h.status} · ${h.connectedNodes}/${h.knownNodes} nodes`; p.className = "pill " + (h.status === "healthy" ? "ok" : "bad"); }).catch(() => {});
-    const buckets = await api("/buckets");
+    await cached("/buckets", renderBuckets);
+    function renderBuckets(buckets) {
     rows.innerHTML = buckets.length ? buckets.map((b) => {
       const name = (b.globalAliases && b.globalAliases[0]) || b.id.slice(0, 12);
       if (b.error) return `<tr><td><a href="#bucket/${esc(b.id)}">${esc(name)}</a></td><td colspan="4" class="error">${esc(b.error)}</td></tr>`;
       return `<tr><td><a href="#bucket/${esc(b.id)}" class="cell-title">${esc(name)}</a><span class="cell-sub">${esc(b.id.slice(0, 16))}…</span></td><td class="num">${b.objects}</td><td class="num">${fmtBytes(b.bytes)}</td><td>${b.keys.length ? `<div class="keylist">${b.keys.map((k) => `<span><span class="mono">${esc(k.name)}</span> ${perms(k.permissions)}</span>`).join("")}</div>` : '<span class="muted">none</span>'}</td><td>${fmtDate(b.created)}</td></tr>`;
     }).join("") : `<tr><td colspan="5" class="empty">No buckets yet.</td></tr>`;
     $("#bucket-count").textContent = buckets.length ? `(${buckets.length})` : "";
+    }
     $("#new-bucket").onclick = () => { $("#bucket-form").hidden = false; $("#create-bucket input[name=name]").focus(); };
     $("#cancel-bucket").onclick = () => { $("#bucket-form").hidden = true; };
     $("#create-bucket").addEventListener("submit", async (e) => {
@@ -166,8 +225,9 @@
   async function showKeys() {
     render("#t-keys");
     const rows = $("#key-rows"); rows.innerHTML = `<tr><td colspan="4" class="empty">Loading…</td></tr>`;
-    const [keys, buckets] = await Promise.all([api("/keys"), api("/buckets")]);
-    $("#key-bucket").innerHTML = `<option value="">(none yet)</option>` + buckets.map((b) => `<option value="${esc(b.id)}">${esc((b.globalAliases || [])[0] || b.id.slice(0, 12))}</option>`).join("");
+    cached("/buckets", (buckets) => { $("#key-bucket").innerHTML = `<option value="">(none yet)</option>` + buckets.map((b) => `<option value="${esc(b.id)}">${esc((b.globalAliases || [])[0] || b.id.slice(0, 12))}</option>`).join(""); }).catch(() => {});
+    await cached("/keys", renderKeys);
+    function renderKeys(keys) {
     $("#key-count").textContent = keys.length ? `(${keys.length})` : "";
     rows.innerHTML = keys.length ? keys.map((k) => `<tr><td><span class="cell-title">${esc(k.name)}</span><span class="cell-sub">${esc(k.accessKeyId)}</span></td><td>${(k.buckets || []).length ? `<div class="keylist">${k.buckets.map((b) => `<span><a href="#bucket/${esc(b.id)}">${esc((b.globalAliases || [])[0] || b.id.slice(0, 12))}</a> ${perms(b.permissions)}</span>`).join("")}</div>` : '<span class="muted">no bucket</span>'}</td><td>${fmtDate(k.created)}</td><td><div class="actions">${iconBtn("eye", "Show secret", `data-reveal="${esc(k.accessKeyId)}"`)}${iconBtn("rotate", "Rotate key (new secret)", `data-rotate="${esc(k.accessKeyId)}" data-name="${esc(k.name)}"`)}${iconBtn("trash", "Delete key", `data-del="${esc(k.accessKeyId)}" data-name="${esc(k.name)}"`, true)}</div></td></tr>`).join("") : `<tr><td colspan="4" class="empty">No keys yet.</td></tr>`;
     rows.querySelectorAll("[data-reveal]").forEach((btn) => {
@@ -187,6 +247,7 @@
         await busy(btn, async () => { try { await api(`/keys/${encodeURIComponent(btn.dataset.del)}/delete`, { name: typed }); toast("Key deleted"); showKeys(); } catch (x) { toast(x.message, true); } });
       };
     });
+    }
     $("#new-key").onclick = () => { $("#key-form").hidden = false; $("#create-key input[name=name]").focus(); };
     $("#cancel-key").onclick = () => { $("#key-form").hidden = true; };
     $("#create-key").addEventListener("submit", async (e) => {
@@ -199,7 +260,8 @@
 
   async function showAdmins() {
     render("#t-admins");
-    const d = await api("/admins");
+    await cached("/admins", renderAdmins);
+    function renderAdmins(d) {
     $("#admin-count").textContent = d.admins.length ? `(${d.admins.length})` : "";
     $("#admin-rows").innerHTML = d.admins.map((a) => `<tr><td><span class="cell-title">${esc(a.name)}</span></td><td>${esc(a.email)}</td><td>${fmtDate(a.created_at)}</td><td>${a.disabled ? '<span class="pill bad">disabled</span>' : '<span class="pill ok">active</span>'}</td><td><div class="actions">${a.id === me.id ? '<span class="muted small">you</span>' : iconBtn(a.disabled ? "userOn" : "userOff", a.disabled ? "Enable administrator" : "Disable administrator", `data-toggle="${esc(a.id)}" data-disabled="${a.disabled}"`, !a.disabled)}</div></td></tr>`).join("");
     $("#admin-rows").querySelectorAll("[data-toggle]").forEach((btn) => {
@@ -207,6 +269,7 @@
     });
     const pending = d.invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date());
     $("#invite-rows").innerHTML = pending.length ? pending.map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.email)}</td><td>${esc(i.created_by)}</td><td>${fmtDate(i.expires_at)}</td></tr>`).join("") : `<tr><td colspan="4" class="empty">None.</td></tr>`;
+    }
     $("#new-invite").onclick = () => { $("#invite-form-card").hidden = false; $("#create-invite input[name=name]").focus(); };
     $("#create-invite").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -218,10 +281,11 @@
 
   async function showAudit() {
     render("#t-audit");
-    const rows = await api("/audit?limit=500");
-    $("#audit-count").textContent = rows.length ? `(${rows.length})` : "";
-    $("#audit-rows").innerHTML = rows.length ? rows.map((r) => `<tr><td class="mono">${fmtDate(r.ts)}</td><td>${esc(r.admin)}</td><td><span class="pill">${esc(r.action)}</span></td><td class="mono">${esc(r.target)}</td><td class="mono small">${esc(JSON.stringify(r.details))}</td><td class="mono">${esc(r.ip)}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">Nothing yet.</td></tr>`;
-    $("#audit-export").href = URL.createObjectURL(new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" }));
+    await cached("/audit?limit=500", (rows) => {
+      $("#audit-count").textContent = rows.length ? `(${rows.length})` : "";
+      $("#audit-rows").innerHTML = rows.length ? rows.map((r) => `<tr><td class="nowrap">${fmtDate(r.ts)}</td><td>${esc(r.admin)}</td><td class="nowrap"><span class="pill">${esc(r.action)}</span></td><td class="mono">${esc(r.target)}</td><td>${details(r.details)}</td><td class="mono nowrap">${esc(r.ip)}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">Nothing yet.</td></tr>`;
+      $("#audit-export").href = URL.createObjectURL(new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" }));
+    });
   }
 
   async function showProfile() {
@@ -246,14 +310,17 @@
     if (m) return showInvite(m[1]);
     if (!me) return showLogin();
     $("#nav").hidden = false; $("#who").textContent = me.name;
-    document.querySelectorAll("#nav a[data-view]").forEach((a) => a.classList.toggle("active", h.startsWith(a.dataset.view) || (h.startsWith("bucket/") && a.dataset.view === "buckets")));
+    const current = h || "overview";
+    document.querySelectorAll("#nav a[data-view]").forEach((a) => a.classList.toggle("active", current.startsWith(a.dataset.view) || (current.startsWith("bucket/") && a.dataset.view === "buckets")));
     try {
       if (h.startsWith("bucket/")) return await showBucket(h.slice(7));
+      if (h === "buckets") return await showBuckets();
+      if (h === "" || h === "overview") return await showOverview();
       if (h === "keys") return await showKeys();
       if (h === "admins") return await showAdmins();
       if (h === "audit") return await showAudit();
       if (h === "profile") return await showProfile();
-      return await showBuckets();
+      return await showOverview();
     } catch (x) {
       if (/sign in/i.test(x.message)) { me = null; return showLogin("Your session ended; sign in again."); }
       view.innerHTML = `<div class="card"><p class="error">${esc(x.message)}</p></div>`;
@@ -264,6 +331,6 @@
     route();
   }
   window.addEventListener("hashchange", route);
-  $("#logout").onclick = async () => { try { await api("/logout", {}); } catch (_) {} me = null; location.hash = ""; showLogin(); };
+  $("#logout").onclick = async () => { try { await api("/logout", {}); } catch (_) {} cache.clear(); me = null; location.hash = ""; showLogin(); };
   start();
 })();

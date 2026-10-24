@@ -64,6 +64,14 @@ async fn fake_garage() -> (String, FG) {
             fg.lock().unwrap().buckets.remove(&q["id"]);
             axum::http::StatusCode::NO_CONTENT
         }))
+        .route("/v2/ListBucketsInfo", get(|State(fg): State<FG>| async move {
+            let g = fg.lock().unwrap();
+            Json(Value::Array(g.buckets.values().map(|b| bucket_view(b, &g.keys)).collect()))
+        }))
+        .route("/v2/ListKeysInfo", get(|State(fg): State<FG>| async move {
+            let g = fg.lock().unwrap();
+            Json(Value::Array(g.keys.values().map(|k| { let mut v = k.clone(); v["secretAccessKey"] = json!("must-be-dropped"); v }).collect()))
+        }))
         .route("/v2/ListKeys", get(|State(fg): State<FG>| async move {
             let g = fg.lock().unwrap();
             Json(Value::Array(g.keys.values().map(|k| json!({"id": k["accessKeyId"], "name": k["name"], "expired": false, "created": k["created"]})).collect()))
