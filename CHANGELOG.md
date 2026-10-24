@@ -5,3 +5,7 @@
 First release: buckets, keys and permissions over the Garage admin API v2;
 passkey sign-in with one-time invitations; audit log; CLI (`serve`,
 `invite`, `admins`, `disable`, `enable`, `check`).
+
+## 0.1.1 — 2026-10-24
+
+Fix: the navigation bar no longer shows on the invitation and sign-in pages.
